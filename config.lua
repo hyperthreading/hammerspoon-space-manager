@@ -4,6 +4,9 @@ local M = {}
 
 M.hyper = { "ctrl", "alt", "shift", "cmd" }
 
+-- Palette backend: "builtin" (hs.chooser) or "custom" (hs.webview)
+M.paletteBackend = "custom"
+
 M.keybindings = {
     switchToSpace = { key = "space" },
     focusWindow = { key = "s" },
