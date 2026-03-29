@@ -1,4 +1,5 @@
 local window = require("hs.window")
+local spaces = require("hs.spaces")
 local windowfilter = require("hs.window.filter")
 local timer = require("hs.timer")
 local config = require("config")
@@ -7,11 +8,25 @@ local fuzzy = require("lib.fuzzy")
 local M = {}
 M.searchKeys = { "_matchText", "_appName", "_title" }
 
+local REFRESH_DEBOUNCE_SECONDS = 0.15
+local SPACE_REFRESH_DEBOUNCE_SECONDS = 0.2
 local function elapsedMilliseconds(startTime, endTime)
     return (endTime - startTime) / 1e6
 end
 
 local log = hs.logger.new("focus-window", "info")
+local state = {
+    choices = {},
+    windowMap = {},
+    spaceId = nil,
+    lastRefreshAt = nil,
+    lastRefreshDurationMs = nil,
+    refreshReason = nil,
+    refreshTimer = nil,
+    refreshScheduled = false,
+    filter = nil,
+    spaceWatcher = nil,
+}
 
 local function logSlow(label, startTime)
     local elapsed = elapsedMilliseconds(startTime, timer.absoluteTime())
@@ -30,53 +45,165 @@ local function joinSearchText(appName, title)
     return appName .. " " .. title
 end
 
+local function currentSpaceId()
+    return spaces.focusedSpace()
+end
+
+local function mergeReason(existing, incoming)
+    if not existing or existing == "" then return incoming end
+    if not incoming or incoming == "" or existing == incoming then return existing end
+    return existing .. "+" .. incoming
+end
+
+local function countKeys(tbl)
+    local count = 0
+    for _ in pairs(tbl or {}) do
+        count = count + 1
+    end
+    return count
+end
+
+local function ensureFilter()
+    if state.filter then
+        return state.filter
+    end
+
+    local filter = windowfilter.copy(windowfilter.defaultCurrentSpace)
+    local filters = filter:getFilters()
+    local override = {}
+
+    for key, value in pairs(filters.override or {}) do
+        override[key] = value
+    end
+
+    override.currentSpace = true
+    override.allowRoles = "AXStandardWindow"
+
+    filter:setOverrideFilter(override)
+    filter:setSortOrder(windowfilter.sortByFocusedLast)
+    state.filter = filter
+    return filter
+end
+
 local function buildChoicesFromWindows(windows, windowMap)
     local items = {}
 
     for _, win in ipairs(windows) do
-        if win:isStandard() then
-            local winId = win:id()
-            local app = win:application()
-            local appName = trim(app and app:name() or "")
-            local title = trim(win:title() or "")
+        local winId = win:id()
+        local app = win:application()
+        local appName = trim(app and app:name() or "")
+        local title = trim(win:title() or "")
 
-            if winId and (appName ~= "" or title ~= "") then
-                local windowKey = tostring(winId)
-                if windowMap then
-                    windowMap[windowKey] = win
-                end
-
-                table.insert(items, {
-                    text = appName ~= "" and appName or title,
-                    subText = title ~= "" and title or "Untitled window",
-                    windowId = winId,
-                    windowKey = windowKey,
-                    _matchText = joinSearchText(appName, title),
-                    _appName = appName,
-                    _title = title,
-                })
+        if winId and (appName ~= "" or title ~= "") then
+            local windowKey = tostring(winId)
+            if windowMap then
+                windowMap[windowKey] = win
             end
+
+            table.insert(items, {
+                text = appName ~= "" and appName or title,
+                subText = title ~= "" and title or "Untitled window",
+                windowId = winId,
+                windowKey = windowKey,
+                _matchText = joinSearchText(appName, title),
+                _appName = appName,
+                _title = title,
+            })
         end
     end
 
     return items
 end
 
-function M.buildChoices()
-    local windows = windowfilter.defaultCurrentSpace:getWindows(windowfilter.sortByFocusedLast)
-    return buildChoicesFromWindows(windows)
-end
-
-local function collectChoices()
+local function collectChoicesNow()
+    local filter = ensureFilter()
     local windowMap = {}
-    local windows = windowfilter.defaultCurrentSpace:getWindows(windowfilter.sortByFocusedLast)
+    local windows = filter:getWindows(windowfilter.sortByFocusedLast)
     local choices = buildChoicesFromWindows(windows, windowMap)
     return choices, windowMap, windows
 end
 
+local function replaceCache(choices, windowMap)
+    state.choices = choices
+    state.windowMap = windowMap
+    state.spaceId = currentSpaceId()
+    state.lastRefreshAt = os.time()
+end
+
+local function refreshCache(reason)
+    local startTime = timer.absoluteTime()
+    local choices, windowMap, windows = collectChoicesNow()
+    local endTime = timer.absoluteTime()
+
+    replaceCache(choices, windowMap)
+    state.lastRefreshDurationMs = elapsedMilliseconds(startTime, endTime)
+
+    if state.lastRefreshDurationMs > 100 then
+        log.wf(
+            "[SLOW] refreshCache(%s) took %.1fms for %d windows (%d choices)",
+            reason or "unknown",
+            state.lastRefreshDurationMs,
+            #windows,
+            #choices
+        )
+    end
+end
+
+local function scheduleRefresh(reason, delaySeconds)
+    ensureFilter()
+
+    state.refreshReason = mergeReason(state.refreshReason, reason)
+    state.refreshScheduled = true
+
+    if state.refreshTimer then
+        state.refreshTimer:stop()
+    end
+
+    state.refreshTimer = timer.doAfter(delaySeconds or REFRESH_DEBOUNCE_SECONDS, function()
+        local refreshReason = state.refreshReason
+        state.refreshTimer = nil
+        state.refreshReason = nil
+        state.refreshScheduled = false
+        refreshCache(refreshReason)
+    end)
+end
+
+local function subscribeRefreshSources()
+    if state.spaceWatcher then
+        return
+    end
+
+    local filter = ensureFilter()
+    local eventReasons = {
+        { windowfilter.windowsChanged,          "windowsChanged" },
+        { windowfilter.windowTitleChanged,      "windowTitleChanged" },
+        { windowfilter.windowFocused,           "windowFocused" },
+        { windowfilter.windowCreated,           "windowCreated" },
+        { windowfilter.windowDestroyed,         "windowDestroyed" },
+        { windowfilter.windowInCurrentSpace,    "windowInCurrentSpace" },
+        { windowfilter.windowNotInCurrentSpace, "windowNotInCurrentSpace" },
+    }
+
+    for _, eventSpec in ipairs(eventReasons) do
+        filter:subscribe(eventSpec[1], function()
+            scheduleRefresh(eventSpec[2])
+        end)
+    end
+
+    state.spaceWatcher = spaces.watcher.new(function()
+        scheduleRefresh("spaceChanged", SPACE_REFRESH_DEBOUNCE_SECONDS)
+    end)
+    state.spaceWatcher:start()
+end
+
+function M.buildChoices()
+    local choices = collectChoicesNow()
+    return choices
+end
+
 function M.profileBuildChoices()
     local startTime = timer.absoluteTime()
-    local windows = windowfilter.defaultCurrentSpace:getWindows(windowfilter.sortByFocusedLast)
+    local windows = ensureFilter():getWindows(windowfilter.sortByFocusedLast)
     local afterGetWindows = timer.absoluteTime()
     local windowMap = {}
     local choices = buildChoicesFromWindows(windows, windowMap)
@@ -85,15 +212,20 @@ function M.profileBuildChoices()
     return {
         windowCount = #windows,
         choiceCount = #choices,
-        cachedWindowCount = #choices,
+        cachedWindowCount = countKeys(windowMap),
         getWindowsMs = elapsedMilliseconds(startTime, afterGetWindows),
         buildChoicesMs = elapsedMilliseconds(afterGetWindows, endTime),
         totalMs = elapsedMilliseconds(startTime, endTime),
+        cachedSpaceId = state.spaceId,
+        refreshScheduled = state.refreshScheduled,
     }
 end
 
 function M.profileFuzzy(query)
-    local choices = M.buildChoices()
+    local choices = state.choices
+    if #choices == 0 then
+        choices = M.buildChoices()
+    end
     local startTime = timer.absoluteTime()
     local filtered = fuzzy.filter(choices, query or "", M.searchKeys)
     local endTime = timer.absoluteTime()
@@ -136,8 +268,13 @@ function M.focusWindow(choice, windowMap)
 end
 
 function M.profileFocusWindow(windowId)
-    local choices, windowMap = collectChoices()
+    local choices = state.choices
+    local windowMap = state.windowMap
     local targetChoice = nil
+
+    if #choices == 0 then
+        choices, windowMap = collectChoicesNow()
+    end
 
     if windowId then
         for _, choice in ipairs(choices) do
@@ -146,7 +283,9 @@ function M.profileFocusWindow(windowId)
                 break
             end
         end
-    else
+    end
+
+    if not targetChoice then
         targetChoice = choices[1]
     end
 
@@ -170,12 +309,12 @@ end
 
 function M.bindPalette()
     local capturedChoices = {}
-    local capturedWindows = {}
+    local capturedWindowMap = {}
 
     local chooser = hs.chooser.new(function(choice)
         if not choice then return end
         local t0 = timer.absoluteTime()
-        M.focusWindow(choice, capturedWindows)
+        M.focusWindow(choice, capturedWindowMap)
         logSlow("focusWindow", t0)
     end)
 
@@ -189,12 +328,15 @@ function M.bindPalette()
     end)
 
     hs.hotkey.bind(config.hyper, config.keybindings.focusWindow.key, function()
-        local t0 = timer.absoluteTime()
-        capturedChoices, capturedWindows = collectChoices()
-        logSlow("collectChoices", t0)
+        capturedChoices = state.choices
+        capturedWindowMap = state.windowMap
 
         if #capturedChoices == 0 then
-            hs.alert.show("No switchable windows in this Space")
+            if state.refreshScheduled then
+                hs.alert.show("Window cache is warming up")
+            else
+                hs.alert.show("No switchable windows in this Space")
+            end
             return
         end
 
@@ -204,6 +346,9 @@ function M.bindPalette()
 end
 
 function M.init()
+    ensureFilter()
+    subscribeRefreshSources()
+    scheduleRefresh("warmup", 0)
     M.bindPalette()
 end
 
