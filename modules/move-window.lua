@@ -80,7 +80,7 @@ function M.bindPalette()
         mods = config.hyper,
         key = config.keybindings.moveWindowToSpace.key,
         placeholder = "Move window to…",
-        searchKeys = { "_name", "_spaceStr" },
+        searchKeys = { "_name", "_spaceStr", "subText" },
         onOpen = function()
             capturedWin = hs.window.focusedWindow()
         end,

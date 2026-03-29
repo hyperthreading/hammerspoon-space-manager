@@ -17,7 +17,7 @@ function M.bindPalette()
         mods = config.hyper,
         key = config.keybindings.switchToSpace.key,
         placeholder = "Switch to…",
-        searchKeys = { "_name", "_spaceStr" },
+        searchKeys = { "_name", "_spaceStr", "subText" },
         buildChoices = function()
             local items = {}
             for _, alias in ipairs(config.spaces) do
