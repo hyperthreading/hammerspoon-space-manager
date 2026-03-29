@@ -383,6 +383,15 @@ function M.bindPalette()
         buildChoices = function()
             return capturedChoices
         end,
+        initialSelection = function(choices)
+            local focused = window.focusedWindow()
+            if not focused then return nil end
+            local focusedId = focused:id()
+            for i, choice in ipairs(choices) do
+                if choice.windowId == focusedId then return i end
+            end
+            return nil
+        end,
         onSelect = function(choice)
             local t0 = timer.absoluteTime()
             M.focusWindow(choice, capturedWindowMap)

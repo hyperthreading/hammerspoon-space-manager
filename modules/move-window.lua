@@ -217,6 +217,14 @@ function M.bindPalette()
 
             return items
         end,
+        initialSelection = function(choices)
+            local current = config.getCurrentSpace()
+            if not current then return nil end
+            for i, choice in ipairs(choices) do
+                if choice.id == current.id then return i end
+            end
+            return nil
+        end,
         onSelect = function(choice)
             if capturedWin then
                 capturedWin:focus()

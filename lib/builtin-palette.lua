@@ -50,7 +50,12 @@ function M.bind(opts)
     local chooser = M.create(opts)
     hs.hotkey.bind(opts.mods, opts.key, function()
         if opts.onOpen then opts.onOpen() end
-        chooser:choices(normalizeChoices(opts.buildChoices()))
+        local choices = opts.buildChoices()
+        chooser:choices(normalizeChoices(choices))
+        if opts.initialSelection then
+            local idx = opts.initialSelection(choices)
+            if idx then chooser:selectedRow(idx) end
+        end
         chooser:show()
     end)
     return chooser

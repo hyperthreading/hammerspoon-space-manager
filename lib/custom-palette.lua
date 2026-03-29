@@ -139,9 +139,11 @@ local HTML_TEMPLATE = [[
   let selectedIndex = 0;
   const post = (msg) => webkit.messageHandlers.palette.postMessage(msg);
 
-  function updateChoices(newItems) {
+  function updateChoices(newItems, initialIndex) {
     items = newItems;
-    selectedIndex = items.length > 0 ? 0 : -1;
+    selectedIndex = (typeof initialIndex === 'number' && initialIndex >= 0 && initialIndex < items.length)
+      ? initialIndex
+      : (items.length > 0 ? 0 : -1);
     render();
   }
 
@@ -278,6 +280,8 @@ function M.create(opts)
         return nil, nil
     end
 
+    local pendingInitialIndex = nil
+
     local function sendChoices()
         if not wv then return end
         local items = {}
@@ -290,7 +294,12 @@ function M.create(opts)
                 iconType = iconType,
             }
         end
-        wv:evaluateJavaScript("updateChoices(" .. hs.json.encode(items) .. ")")
+        local initialArg = ""
+        if pendingInitialIndex then
+            initialArg = ", " .. (pendingInitialIndex - 1) -- Lua 1-based → JS 0-based
+            pendingInitialIndex = nil
+        end
+        wv:evaluateJavaScript("updateChoices(" .. hs.json.encode(items) .. initialArg .. ")")
     end
 
     local function applyFilter(query)
@@ -367,6 +376,11 @@ function M.create(opts)
     function obj:show()
         allChoices = opts.buildChoices and opts.buildChoices() or {}
         filteredChoices = allChoices
+
+        if opts.initialSelection then
+            pendingInitialIndex = opts.initialSelection(allChoices)
+        end
+
         ensureWebView()
 
         -- Reposition to current main screen
@@ -384,10 +398,8 @@ function M.create(opts)
 
         if pageReady then
             wv:evaluateJavaScript("resetPalette()")
-            sendChoices()
         end
-        -- First load: JS sends 'ready' after HTML loads → sendChoices
-        -- Subsequent shows: resetPalette sends 'ready' → sendChoices
+        -- Both paths converge: JS posts 'ready' → callback calls sendChoices()
     end
 
     function obj:hide()
