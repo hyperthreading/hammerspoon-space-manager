@@ -3,13 +3,21 @@ local windowfilter = require("hs.window.filter")
 local timer = require("hs.timer")
 local config = require("config")
 local fuzzy = require("lib.fuzzy")
-local palette = require("lib.palette")
 
 local M = {}
 M.searchKeys = { "_matchText", "_appName", "_title" }
 
 local function elapsedMilliseconds(startTime, endTime)
     return (endTime - startTime) / 1e6
+end
+
+local log = hs.logger.new("focus-window", "info")
+
+local function logSlow(label, startTime)
+    local elapsed = elapsedMilliseconds(startTime, timer.absoluteTime())
+    if elapsed > 100 then
+        log.wf("[SLOW] %s took %.1fms", label, elapsed)
+    end
 end
 
 local function trim(text)
@@ -164,19 +172,26 @@ function M.bindPalette()
     local capturedChoices = {}
     local capturedWindows = {}
 
-    local chooser = palette.create({
-        placeholder = "Focus window in current Space…",
-        searchKeys = M.searchKeys,
-        buildChoices = function()
-            return capturedChoices
-        end,
-        onSelect = function(choice)
-            M.focusWindow(choice, capturedWindows)
-        end,
-    })
+    local chooser = hs.chooser.new(function(choice)
+        if not choice then return end
+        local t0 = timer.absoluteTime()
+        M.focusWindow(choice, capturedWindows)
+        logSlow("focusWindow", t0)
+    end)
+
+    chooser:placeholderText("Focus window in current Space…")
+
+    chooser:queryChangedCallback(function(query)
+        local t0 = timer.absoluteTime()
+        local filtered = fuzzy.filter(capturedChoices, query, M.searchKeys)
+        chooser:choices(filtered)
+        logSlow("fuzzyFilter", t0)
+    end)
 
     hs.hotkey.bind(config.hyper, config.keybindings.focusWindow.key, function()
+        local t0 = timer.absoluteTime()
         capturedChoices, capturedWindows = collectChoices()
+        logSlow("collectChoices", t0)
 
         if #capturedChoices == 0 then
             hs.alert.show("No switchable windows in this Space")
