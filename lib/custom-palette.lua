@@ -112,6 +112,7 @@ local HTML_TEMPLATE = [[
     s.value = '';
     s.focus();
     selectedIndex = 0;
+    post({ type: 'ready' });
   }
 
   function esc(s) {
@@ -185,6 +186,8 @@ local HTML_TEMPLATE = [[
       post({ type: 'dismiss' });
     }
   });
+
+  post({ type: 'ready' });
 </script>
 </body>
 </html>
@@ -195,6 +198,7 @@ function M.create(opts)
     local filteredChoices = {}
     local wv = nil
     local isVisible = false
+    local pageReady = false
 
     local obj = {}
 
@@ -228,7 +232,10 @@ function M.create(opts)
         local uc = hs.webview.usercontent.new("palette")
         uc:setCallback(function(msg)
             local body = msg.body
-            if body.type == "query" then
+            if body.type == "ready" then
+                pageReady = true
+                if isVisible then sendChoices() end
+            elseif body.type == "query" then
                 applyFilter(body.query)
             elseif body.type == "select" then
                 local choice = filteredChoices[body.index + 1]
@@ -255,8 +262,8 @@ function M.create(opts)
         wv:transparent(true)
         wv:shadow(false)
         wv:deleteOnClose(false)
-        wv:windowCallback(function(action, _, state)
-            if action == "focusChange" and state == false and isVisible then
+        wv:windowCallback(function(action, _, hasFocus)
+            if action == "focusChange" and not hasFocus and isVisible then
                 dismiss()
             end
         end)
@@ -282,12 +289,14 @@ function M.create(opts)
 
         isVisible = true
         wv:show()
+        hs.focus()
 
-        hs.timer.doAfter(0.05, function()
-            if not isVisible then return end
+        if pageReady then
             wv:evaluateJavaScript("resetPalette()")
             sendChoices()
-        end)
+        end
+        -- First load: JS sends 'ready' after HTML loads → sendChoices
+        -- Subsequent shows: resetPalette sends 'ready' → sendChoices
     end
 
     function obj:hide()
