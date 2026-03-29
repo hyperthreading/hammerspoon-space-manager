@@ -35,6 +35,11 @@ local function logSlow(label, startTime)
     end
 end
 
+local function logSlowCacheAccess(label, startTime, choiceCount)
+    local suffix = string.format(" [%d choices, space=%s]", choiceCount or 0, tostring(state.spaceId))
+    logSlow(label .. suffix, startTime)
+end
+
 local function trim(text)
     return text and text:match("^%s*(.-)%s*$") or ""
 end
@@ -115,11 +120,21 @@ local function buildChoicesFromWindows(windows, windowMap)
     return items
 end
 
-local function collectChoicesNow()
+local function collectChoicesNow(reason)
+    local startTime = timer.absoluteTime()
     local filter = ensureFilter()
     local windowMap = {}
     local windows = filter:getWindows(windowfilter.sortByFocusedLast)
     local choices = buildChoicesFromWindows(windows, windowMap)
+    logSlow(
+        string.format(
+            "collectChoices(%s) [%d windows, %d choices]",
+            reason or "unknown",
+            #windows,
+            #choices
+        ),
+        startTime
+    )
     return choices, windowMap, windows
 end
 
@@ -132,7 +147,7 @@ end
 
 local function refreshCache(reason)
     local startTime = timer.absoluteTime()
-    local choices, windowMap, windows = collectChoicesNow()
+    local choices, windowMap, windows = collectChoicesNow(reason)
     local endTime = timer.absoluteTime()
 
     replaceCache(choices, windowMap)
@@ -197,7 +212,7 @@ local function subscribeRefreshSources()
 end
 
 function M.buildChoices()
-    local choices = collectChoicesNow()
+    local choices = collectChoicesNow("buildChoices")
     return choices
 end
 
@@ -273,7 +288,7 @@ function M.profileFocusWindow(windowId)
     local targetChoice = nil
 
     if #choices == 0 then
-        choices, windowMap = collectChoicesNow()
+        choices, windowMap = collectChoicesNow("profileFocusWindow")
     end
 
     if windowId then
@@ -328,13 +343,16 @@ function M.bindPalette()
     end)
 
     hs.hotkey.bind(config.hyper, config.keybindings.focusWindow.key, function()
+        local t0 = timer.absoluteTime()
         capturedChoices = state.choices
         capturedWindowMap = state.windowMap
 
         if #capturedChoices == 0 then
             if state.refreshScheduled then
+                logSlowCacheAccess("cacheMiss(warmingUp)", t0, #capturedChoices)
                 hs.alert.show("Window cache is warming up")
             else
+                logSlowCacheAccess("cacheMiss(empty)", t0, #capturedChoices)
                 hs.alert.show("No switchable windows in this Space")
             end
             return
@@ -342,6 +360,7 @@ function M.bindPalette()
 
         chooser:choices(capturedChoices)
         chooser:show()
+        logSlowCacheAccess("cacheHit(showChooser)", t0, #capturedChoices)
     end)
 end
 
