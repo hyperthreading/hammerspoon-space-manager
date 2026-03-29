@@ -53,6 +53,15 @@ local function joinSearchText(appName, title)
     return appName .. " " .. title
 end
 
+local function hasUsableFrame(win)
+    local frame = win:frame()
+    if not frame then
+        return false
+    end
+
+    return frame.w > 0 and frame.h > 0
+end
+
 local function appIconForWindow(app)
     if not app then
         return nil, nil
@@ -117,6 +126,7 @@ local function ensureFilter()
     end
 
     override.currentSpace = true
+    override.visible = true
     override.allowRoles = "AXStandardWindow"
 
     filter:setOverrideFilter(override)
@@ -135,7 +145,7 @@ local function buildChoicesFromWindows(windows, windowMap)
         local title = trim(win:title() or "")
         local appIconImage, appIconUrl = appIconForWindow(app)
 
-        if winId and (appName ~= "" or title ~= "") then
+        if winId and hasUsableFrame(win) and (appName ~= "" or title ~= "") then
             local windowKey = tostring(winId)
             if windowMap then
                 windowMap[windowKey] = win
@@ -234,6 +244,8 @@ local function subscribeRefreshSources()
         { windowfilter.windowFocused,           "windowFocused" },
         { windowfilter.windowCreated,           "windowCreated" },
         { windowfilter.windowDestroyed,         "windowDestroyed" },
+        { windowfilter.windowVisible,           "windowVisible" },
+        { windowfilter.windowNotVisible,        "windowNotVisible" },
         { windowfilter.windowInCurrentSpace,    "windowInCurrentSpace" },
         { windowfilter.windowNotInCurrentSpace, "windowNotInCurrentSpace" },
     }
