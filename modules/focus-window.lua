@@ -4,6 +4,7 @@ local windowfilter = require("hs.window.filter")
 local timer = require("hs.timer")
 local config = require("config")
 local fuzzy = require("lib.fuzzy")
+local palette = require("lib.palette")
 
 local M = {}
 M.searchKeys = { "_matchText", "_appName", "_title" }
@@ -326,21 +327,18 @@ function M.bindPalette()
     local capturedChoices = {}
     local capturedWindowMap = {}
 
-    local chooser = hs.chooser.new(function(choice)
-        if not choice then return end
-        local t0 = timer.absoluteTime()
-        M.focusWindow(choice, capturedWindowMap)
-        logSlow("focusWindow", t0)
-    end)
-
-    chooser:placeholderText("Focus window in current Space…")
-
-    chooser:queryChangedCallback(function(query)
-        local t0 = timer.absoluteTime()
-        local filtered = fuzzy.filter(capturedChoices, query, M.searchKeys)
-        chooser:choices(filtered)
-        logSlow("fuzzyFilter", t0)
-    end)
+    local p = palette.create({
+        placeholder = "Focus window in current Space…",
+        searchKeys = M.searchKeys,
+        buildChoices = function()
+            return capturedChoices
+        end,
+        onSelect = function(choice)
+            local t0 = timer.absoluteTime()
+            M.focusWindow(choice, capturedWindowMap)
+            logSlow("focusWindow", t0)
+        end,
+    })
 
     hs.hotkey.bind(config.hyper, config.keybindings.focusWindow.key, function()
         local t0 = timer.absoluteTime()
@@ -358,8 +356,8 @@ function M.bindPalette()
             return
         end
 
-        chooser:choices(capturedChoices)
-        chooser:show()
+        p:choices(capturedChoices)
+        p:show()
         logSlowCacheAccess("cacheHit(showChooser)", t0, #capturedChoices)
     end)
 end
