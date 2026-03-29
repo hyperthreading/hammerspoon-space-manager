@@ -71,14 +71,16 @@ local HTML_TEMPLATE = [[
     text-overflow: ellipsis;
   }
   .item-subtext {
-    color: #777;
-    font-size: 12px;
-    line-height: 1.3;
-    margin-top: 2px;
+    color: rgba(255, 255, 255, 0.62);
+    font-size: 13px;
+    line-height: 1.4;
+    margin-top: 4px;
+    letter-spacing: 0.01em;
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
   }
+  .item.selected .item-subtext { color: rgba(255, 255, 255, 0.82); }
   #empty {
     padding: 20px 16px;
     color: rgba(255, 255, 255, 0.3);
@@ -315,7 +317,9 @@ function M.create(opts)
 
     function obj:delete()
         dismiss()
-        if wv then wv:delete(); wv = nil end
+        if wv then
+            wv:delete(); wv = nil
+        end
     end
 
     function obj:choices(newChoices)
