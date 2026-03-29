@@ -4,6 +4,7 @@ M.hyper = { "ctrl", "alt", "shift", "cmd" }
 
 M.keybindings = {
     switchToSpace = { key = "space" },
+    focusWindow = { key = "s" },
     moveWindowToSpace = { key = "m" },
 }
 
