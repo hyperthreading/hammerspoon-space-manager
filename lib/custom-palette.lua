@@ -6,7 +6,7 @@ local fuzzy = require("lib.fuzzy")
 local M = {}
 
 local WIDTH = 600
-local HEIGHT = 460
+local HEIGHT = 796
 
 local HTML_TEMPLATE = [[
 <!DOCTYPE html>
@@ -46,7 +46,7 @@ local HTML_TEMPLATE = [[
   }
   #search::placeholder { color: rgba(255, 255, 255, 0.35); }
   #list {
-    max-height: 384px;
+    max-height: 720px;
     overflow-y: auto;
     padding: 4px 0;
   }
