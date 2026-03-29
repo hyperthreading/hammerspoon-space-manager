@@ -60,7 +60,7 @@ local function dragWindowToSpaceIndex(spaceIndex, win, targetSpaceId)
 
     -- Use a titlebar point just to the right of the green button.
     local zoomRect = hs.geometry(zoomButtonRect)
-    local clickPoint = hs.geometry.point(zoomRect.x + zoomRect.w + 6, zoomRect.y + (zoomRect.h / 2))
+    local clickPoint = hs.geometry.point(zoomRect.x + zoomRect.w / 2, zoomRect.y + zoomRect.h + 6)
     local dragPoint = hs.geometry.point(clickPoint.x + 1, clickPoint.y)
 
     local newMouseEvent = eventtap.event.newMouseEvent
