@@ -38,6 +38,7 @@ function M.renameCurrentSpace()
     local spaceConfig = findSpaceConfig(spaceIndex)
     local currentName = spaceConfig and spaceConfig.name or ("Space " .. spaceIndex)
 
+    local prevWindow = hs.window.focusedWindow()
     hs.focus()
     local button, newName = dialog.textPrompt(
         "Rename Space " .. spaceIndex,
@@ -46,6 +47,8 @@ function M.renameCurrentSpace()
         "OK",
         "Cancel"
     )
+
+    if prevWindow then prevWindow:focus() end
 
     if button == "OK" and newName and newName ~= "" then
         if spaceConfig then

@@ -199,6 +199,7 @@ function M.create(opts)
     local wv = nil
     local isVisible = false
     local pageReady = false
+    local prevWindow = nil
 
     local obj = {}
 
@@ -220,10 +221,18 @@ function M.create(opts)
         sendChoices()
     end
 
+    local function restoreFocus()
+        if prevWindow then
+            prevWindow:focus()
+            prevWindow = nil
+        end
+    end
+
     local function dismiss()
         if not isVisible then return end
         isVisible = false
         if wv then wv:hide() end
+        restoreFocus()
     end
 
     local function ensureWebView()
@@ -287,6 +296,7 @@ function M.create(opts)
             WIDTH, HEIGHT
         ))
 
+        prevWindow = hs.window.focusedWindow()
         isVisible = true
         wv:show()
         hs.focus()
