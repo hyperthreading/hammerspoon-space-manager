@@ -1,14 +1,17 @@
 -- Switch to a space by alias
 -- Command palette with fuzzy search
 
-local eventtap = require("hs.eventtap")
+local spaces = require("hs.spaces")
 local config = require("config")
 local palette = require("lib.palette")
 
 local M = {}
 
-function M.switchToSpace(n)
-    eventtap.keyStroke({ "ctrl" }, tostring(n))
+function M.switchToSpace(spaceId)
+    local ok, err = spaces.gotoSpace(spaceId)
+    if not ok then
+        hs.alert.show(err or "Could not switch spaces")
+    end
 end
 
 -- Command palette for switching Spaces
@@ -20,18 +23,20 @@ function M.bindPalette()
         searchKeys = { "_name", "_spaceStr", "subText" },
         buildChoices = function()
             local items = {}
-            for _, alias in ipairs(config.spaces) do
+
+            for _, alias in ipairs(config.refreshSpaces()) do
                 table.insert(items, {
                     text = alias.icon .. "  " .. alias.name,
-                    subText = "Switch to Space " .. alias.space,
-                    space = alias.space,
+                    subText = "Switch to Space " .. alias.index,
+                    id = alias.id,
                     _name = alias.name,
-                    _spaceStr = tostring(alias.space),
+                    _spaceStr = tostring(alias.index),
                 })
             end
+
             return items
         end,
-        onSelect = function(choice) M.switchToSpace(choice.space) end,
+        onSelect = function(choice) M.switchToSpace(choice.id) end,
     })
 end
 

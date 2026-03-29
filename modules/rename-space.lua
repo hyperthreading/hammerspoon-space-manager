@@ -1,49 +1,27 @@
 -- Rename the current space via Hyper+R
 -- Shows a text prompt pre-filled with the current name, saves to disk
 
-local spaces = require("hs.spaces")
 local dialog = require("hs.dialog")
 local config = require("config")
 
 local M = {}
 
-local function getCurrentSpaceIndex()
-    local screen = hs.screen.mainScreen()
-    local currentSpaceId = spaces.activeSpaceOnScreen(screen)
-    local allSpaces = spaces.spacesForScreen(screen:getUUID())
-    for i, spaceId in ipairs(allSpaces) do
-        if spaceId == currentSpaceId then
-            return i
-        end
-    end
-    return nil
-end
-
-local function findSpaceConfig(spaceNum)
-    for _, s in ipairs(config.spaces) do
-        if s.space == spaceNum then
-            return s
-        end
-    end
-    return nil
-end
-
 function M.renameCurrentSpace()
-    local spaceIndex = getCurrentSpaceIndex()
-    if not spaceIndex then
+    local currentScreen = config.getCurrentScreen()
+    config.refreshSpaces(currentScreen)
+    local spaceConfig = config.getCurrentSpace(currentScreen)
+
+    if not spaceConfig then
         hs.alert.show("Could not determine current space")
         return
     end
 
-    local spaceConfig = findSpaceConfig(spaceIndex)
-    local currentName = spaceConfig and spaceConfig.name or ("Space " .. spaceIndex)
-
     local prevWindow = hs.window.focusedWindow()
     hs.focus()
     local button, newName = dialog.textPrompt(
-        "Rename Space " .. spaceIndex,
+        "Rename Space " .. spaceConfig.index,
         "Enter a new name for this space:",
-        currentName,
+        spaceConfig.name,
         "OK",
         "Cancel"
     )
@@ -51,11 +29,9 @@ function M.renameCurrentSpace()
     if prevWindow then prevWindow:focus() end
 
     if button == "OK" and newName and newName ~= "" then
-        if spaceConfig then
-            spaceConfig.name = newName
-        end
+        spaceConfig.name = newName
         config.saveSpaceNames()
-        hs.alert.show(spaceConfig.icon .. "  Space " .. spaceIndex .. " → " .. newName)
+        hs.alert.show(spaceConfig.icon .. "  Space " .. spaceConfig.index .. " → " .. newName)
     end
 end
 
