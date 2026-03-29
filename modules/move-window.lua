@@ -13,54 +13,90 @@ local function showMoveError(message)
     hs.alert.show(message or "Could not move window")
 end
 
+local function windowIsOnSpace(win, targetSpaceId)
+    local currentSpaces = spaces.windowSpaces(win)
+    if not currentSpaces then
+        return false
+    end
+
+    for _, currentSpaceId in ipairs(currentSpaces) do
+        if currentSpaceId == targetSpaceId then
+            return true
+        end
+    end
+
+    return false
+end
+
+local function fallbackMoveToSpace(win, targetSpaceId)
+    local ok, err = spaces.moveWindowToSpace(win, targetSpaceId)
+    if not ok then
+        return false, err
+    end
+
+    hs.timer.usleep(120000)
+
+    if windowIsOnSpace(win, targetSpaceId) then
+        return true
+    end
+
+    return false, "Window move did not complete"
+end
+
 local function dragWindowToSpaceIndex(spaceIndex, win, targetSpaceId)
     cache.moving = true
     cache.mousePosition = hs.mouse.absolutePosition()
 
-    -- Safe click point near the zoom (green) button
-    local zoomPoint = hs.geometry(win:zoomButtonRect())
-    local clickPoint = zoomPoint:move({ -1, -1 }).topleft
+    local zoomButtonRect = win:zoomButtonRect()
+    if not zoomButtonRect then
+        local ok, err = fallbackMoveToSpace(win, targetSpaceId)
+        cache.moving = false
+        cache.mousePosition = nil
+        if not ok then
+            showMoveError(err)
+        end
+        return
+    end
+
+    -- Use a titlebar point just to the right of the green button.
+    local zoomRect = hs.geometry(zoomButtonRect)
+    local clickPoint = hs.geometry.point(zoomRect.x + zoomRect.w + 6, zoomRect.y + (zoomRect.h / 2))
+    local dragPoint = hs.geometry.point(clickPoint.x + 1, clickPoint.y)
 
     local newMouseEvent = eventtap.event.newMouseEvent
     local leftMouseDown = eventtap.event.types.leftMouseDown
+    local leftMouseDragged = eventtap.event.types.leftMouseDragged
     local leftMouseUp = eventtap.event.types.leftMouseUp
 
+    hs.mouse.absolutePosition(clickPoint)
+    hs.timer.usleep(50000)
+
     newMouseEvent(leftMouseDown, clickPoint):post()
-    hs.timer.usleep(150000) -- 150ms
+    hs.timer.usleep(80000)
+    newMouseEvent(leftMouseDragged, dragPoint):post()
+    hs.timer.usleep(80000)
 
     -- Use the native macOS shortcut while dragging.
     eventtap.keyStroke({ "ctrl" }, tostring(spaceIndex))
 
-    hs.timer.doAfter(0.5, function()
-        newMouseEvent(leftMouseUp, clickPoint):post()
+    hs.timer.doAfter(0.6, function()
+        newMouseEvent(leftMouseUp, dragPoint):post()
 
-        hs.timer.doAfter(0.1, function()
+        hs.timer.doAfter(0.15, function()
             hs.mouse.absolutePosition(cache.mousePosition)
             cache.mousePosition = nil
             cache.moving = false
 
-            local currentSpaces = spaces.windowSpaces(win)
-            if currentSpaces then
-                for _, currentSpaceId in ipairs(currentSpaces) do
-                    if currentSpaceId == targetSpaceId then
-                        return
-                    end
-                end
+            if windowIsOnSpace(win, targetSpaceId) then
+                return
             end
 
-            showMoveError("Window move did not complete")
+            local ok, err = fallbackMoveToSpace(win, targetSpaceId)
+            if not ok then
+                showMoveError(err)
+            end
         end)
     end)
-end
-
-local function fallbackMoveToSpace(win, targetSpaceId)
-    cache.moving = true
-    local ok, err = spaces.moveWindowToSpace(win, targetSpaceId)
-    cache.moving = false
-
-    if not ok then
-        showMoveError(err)
-    end
 end
 
 local function resolveTarget(screenSpaces, spaceRef)
@@ -131,7 +167,13 @@ function M.moveToSpace(spaceRef, win)
         return
     end
 
-    fallbackMoveToSpace(win, targetSpaceId)
+    cache.moving = true
+    local ok, err = fallbackMoveToSpace(win, targetSpaceId)
+    cache.moving = false
+
+    if not ok then
+        showMoveError(err)
+    end
 end
 
 -- Direct keybindings: Hyper + 1..9
