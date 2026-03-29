@@ -4,6 +4,7 @@
 local fuzzy = require("lib.fuzzy")
 
 local M = {}
+local IMAGE_MT = hs.getObjectMetatable("hs.image")
 
 local WIDTH = 600
 local HEIGHT = 796
@@ -62,6 +63,41 @@ local HTML_TEMPLATE = [[
     transition: background 0.06s ease;
   }
   .item.selected { background: rgba(88, 166, 255, 0.12); }
+  .item-row {
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+    min-width: 0;
+  }
+  .item-icon {
+    width: 22px;
+    height: 22px;
+    flex: 0 0 22px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin-top: 1px;
+    border-radius: 6px;
+    overflow: hidden;
+  }
+  .item-icon-image {
+    background: rgba(255, 255, 255, 0.06);
+    box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.05);
+  }
+  .item-icon-image img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+  }
+  .item-icon-text {
+    font-size: 18px;
+    line-height: 1;
+  }
+  .item-content {
+    min-width: 0;
+    flex: 1;
+  }
   .item-text {
     color: #e8e8e8;
     font-size: 14px;
@@ -123,6 +159,14 @@ local HTML_TEMPLATE = [[
     return d.innerHTML;
   }
 
+  function renderIcon(item) {
+    if (!item.icon) return '';
+    if (item.iconType === 'image') {
+      return '<div class="item-icon item-icon-image"><img src="' + esc(item.icon) + '" alt="" /></div>';
+    }
+    return '<div class="item-icon item-icon-text">' + esc(item.icon) + '</div>';
+  }
+
   function render() {
     const list = document.getElementById('list');
     const empty = document.getElementById('empty');
@@ -136,8 +180,13 @@ local HTML_TEMPLATE = [[
     empty.style.display = 'none';
     list.innerHTML = items.map((item, i) =>
       '<div class="item' + (i === selectedIndex ? ' selected' : '') + '" data-index="' + i + '">' +
-        '<div class="item-text">' + esc(item.text) + '</div>' +
-        (item.subText ? '<div class="item-subtext">' + esc(item.subText) + '</div>' : '') +
+        '<div class="item-row">' +
+          renderIcon(item) +
+          '<div class="item-content">' +
+            '<div class="item-text">' + esc(item.text) + '</div>' +
+            (item.subText ? '<div class="item-subtext">' + esc(item.subText) + '</div>' : '') +
+          '</div>' +
+        '</div>' +
       '</div>'
     ).join('');
 
@@ -205,11 +254,41 @@ function M.create(opts)
 
     local obj = {}
 
+    local function serializeIcon(choice)
+        local icon = choice.icon
+        local iconType = choice.iconType
+
+        if getmetatable(icon) == IMAGE_MT then
+            return icon:copy():size({ h = 22, w = 22 }, true):encodeAsURLString(), "image"
+        end
+
+        if type(icon) == "string" and icon ~= "" then
+            if iconType == "image" or icon:match("^data:image/") then
+                return icon, "image"
+            end
+
+            return icon, "text"
+        end
+
+        local image = choice.image
+        if getmetatable(image) == IMAGE_MT then
+            return image:copy():size({ h = 22, w = 22 }, true):encodeAsURLString(), "image"
+        end
+
+        return nil, nil
+    end
+
     local function sendChoices()
         if not wv then return end
         local items = {}
         for _, c in ipairs(filteredChoices) do
-            items[#items + 1] = { text = c.text or "", subText = c.subText or "" }
+            local icon, iconType = serializeIcon(c)
+            items[#items + 1] = {
+                text = c.text or "",
+                subText = c.subText or "",
+                icon = icon,
+                iconType = iconType,
+            }
         end
         wv:evaluateJavaScript("updateChoices(" .. hs.json.encode(items) .. ")")
     end

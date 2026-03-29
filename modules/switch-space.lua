@@ -26,8 +26,10 @@ function M.bindPalette()
 
             for _, alias in ipairs(config.refreshSpaces()) do
                 table.insert(items, {
-                    text = alias.icon .. "  " .. alias.name,
+                    text = alias.name,
                     subText = "Switch to Space " .. alias.index,
+                    icon = alias.icon,
+                    iconType = "text",
                     id = alias.id,
                     _name = alias.name,
                     _spaceStr = tostring(alias.index),

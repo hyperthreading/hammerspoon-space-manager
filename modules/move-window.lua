@@ -162,8 +162,10 @@ function M.bindPalette()
 
             for _, alias in ipairs(screenSpaces) do
                 table.insert(items, {
-                    text = alias.icon .. "  " .. alias.name,
+                    text = alias.name,
                     subText = "Move \"" .. winTitle .. "\" → Space " .. alias.index,
+                    icon = alias.icon,
+                    iconType = "text",
                     id = alias.id,
                     index = alias.index,
                     _name = alias.name,

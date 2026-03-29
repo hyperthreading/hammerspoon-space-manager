@@ -1,4 +1,5 @@
 local window = require("hs.window")
+local image = require("hs.image")
 local spaces = require("hs.spaces")
 local windowfilter = require("hs.window.filter")
 local timer = require("hs.timer")
@@ -27,6 +28,7 @@ local state = {
     refreshScheduled = false,
     filter = nil,
     spaceWatcher = nil,
+    appIcons = {},
 }
 
 local function logSlow(label, startTime)
@@ -49,6 +51,38 @@ local function joinSearchText(appName, title)
     if appName == "" then return title end
     if title == "" then return appName end
     return appName .. " " .. title
+end
+
+local function appIconForWindow(app)
+    if not app then
+        return nil, nil
+    end
+
+    local bundleId = app:bundleID()
+    if not bundleId or bundleId == "" then
+        return nil, nil
+    end
+
+    local cached = state.appIcons[bundleId]
+    if cached ~= nil then
+        if cached == false then
+            return nil, nil
+        end
+        return cached.image, cached.url
+    end
+
+    local iconImage = image.imageFromAppBundle(bundleId)
+    if not iconImage then
+        state.appIcons[bundleId] = false
+        return nil, nil
+    end
+
+    local cachedIcon = {
+        image = iconImage,
+        url = iconImage:copy():size({ h = 22, w = 22 }, true):encodeAsURLString(),
+    }
+    state.appIcons[bundleId] = cachedIcon
+    return cachedIcon.image, cachedIcon.url
 end
 
 local function currentSpaceId()
@@ -99,6 +133,7 @@ local function buildChoicesFromWindows(windows, windowMap)
         local app = win:application()
         local appName = trim(app and app:name() or "")
         local title = trim(win:title() or "")
+        local appIconImage, appIconUrl = appIconForWindow(app)
 
         if winId and (appName ~= "" or title ~= "") then
             local windowKey = tostring(winId)
@@ -111,6 +146,9 @@ local function buildChoicesFromWindows(windows, windowMap)
                 subText = title ~= "" and title or "Untitled window",
                 windowId = winId,
                 windowKey = windowKey,
+                image = appIconImage,
+                icon = appIconUrl,
+                iconType = appIconUrl and "image" or nil,
                 _matchText = joinSearchText(appName, title),
                 _appName = appName,
                 _title = title,
